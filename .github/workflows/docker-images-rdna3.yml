@@ -1,0 +1,136 @@
+name: Strata rdna3 image
+
+# Builds a Strata container image from this fork's gfx1100 HIP engine and pushes it to ghcr.io/amidg/strata.
+# Nothing runs on its own: start it from Actions -> "Strata rdna3 image" -> Run workflow.
+# The first run with push off builds the image without publishing it (a dry run).
+
+on:
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: 'Git ref of the fork to build (empty: the default branch)'
+        required: false
+        default: ''
+        type: string
+      version:
+        description: 'Version label for the package and the image'
+        required: false
+        default: '0.2.3'
+        type: string
+      push:
+        description: 'Push the image to ghcr.io'
+        required: true
+        default: true
+        type: boolean
+      latest:
+        description: 'Also move the latest-rdna3 tag'
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/amidg/strata
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Free disk space (the runner has about 14 GB; the TheRock venv plus the build needs most of it)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          docker system prune -af >/dev/null 2>&1 || true
+          df -h /
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref || github.ref_name }}
+          fetch-depth: 1
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git cmake ninja-build python3 python3-venv patchelf unzip
+          df -h /
+
+      - name: Python venv
+        run: |
+          python3 -m venv .venv
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -r requirements.txt
+
+      - name: Fetch llama.cpp, rocWMMA and the TheRock wheels
+        run: |
+          .venv/bin/python -c "import setup; setup.get_llama_cpp(); setup.get_rocwmma(); setup.rocm_root(['gfx1100'])"
+          df -h /
+
+      - name: Build the HIP engine package (gfx1100, rx7900 variant)
+        env:
+          VARIANT: rx7900
+          SRC: ${{ github.workspace }}
+          LLAMA: ${{ github.workspace }}/third_party/llama.cpp
+          OUT: ${{ github.workspace }}/work
+          PKGVER: ${{ inputs.version }}
+          COMMIT: ${{ github.sha }}
+          JOBS: "4"
+          DSV41: "0"
+        run: |
+          HP=$(.venv/bin/python -c "import setup; print(setup.rocm_root(['gfx1100'])[0])")
+          echo "ROCm root: $HP"
+          export HP CORE="$HP" LIBW="$HP"
+          bash packaging/build_hip_linux.sh
+          echo "--- build status ---"
+          cat work/build.status
+          df -h /
+
+      - name: Locate the engine package
+        id: pkg
+        run: |
+          PKG=$(find work/components/engine -maxdepth 2 -name engine-component.json -printf '%h\n' | head -1)
+          [ -n "$PKG" ] || { echo "no engine package produced"; exit 1; }
+          echo "package=$PKG" >> "$GITHUB_OUTPUT"
+          ls -la "$PKG"
+
+      - name: Assemble the Docker build context
+        run: |
+          rm -rf /tmp/strata-ctx
+          bash docker/build.sh --flavor hip \
+            --engine "${{ steps.pkg.outputs.package }}" \
+            --version "${{ inputs.version }}" \
+            --tag "strata:${{ inputs.version }}-rdna3" \
+            --ctx /tmp/strata-ctx --ctx-only
+
+      - name: Build the image
+        run: |
+          docker build --no-cache \
+            --build-arg "BASE_IMAGE=ubuntu:24.04" \
+            --build-arg "FLAVOR=hip" \
+            --build-arg "STRATA_COMMIT=${{ github.sha }}" \
+            --build-arg "STRATA_VERSION=${{ inputs.version }}" \
+            --build-arg "ENGINE_LABEL=rdna3-${{ github.sha }}" \
+            -t "strata:${{ inputs.version }}-rdna3" /tmp/strata-ctx
+
+      - name: Tag for the registry
+        run: |
+          DATE=$(date -u +%Y%m%d)
+          docker tag "strata:${{ inputs.version }}-rdna3" "${{ env.IMAGE }}:${{ inputs.version }}-rdna3-${DATE}"
+          docker tag "strata:${{ inputs.version }}-rdna3" "${{ env.IMAGE }}:latest-rdna3"
+
+      - name: Log in and push
+        if: ${{ inputs.push }}
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          DATE=$(date -u +%Y%m%d)
+          docker push "${{ env.IMAGE }}:${{ inputs.version }}-rdna3-${DATE}"
+          if [ "${{ inputs.latest }}" = "true" ]; then
+            docker push "${{ env.IMAGE }}:latest-rdna3"
+          fi
