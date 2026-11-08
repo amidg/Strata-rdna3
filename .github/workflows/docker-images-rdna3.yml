@@ -83,7 +83,7 @@ jobs:
           JOBS: "4"
           DSV41: "0"
         run: |
-          HP=$(.venv/bin/python -c "import setup; print(setup.rocm_root(['gfx1100'])[0])")
+          HP=$(.venv/bin/python -c "import setup; setup.say=setup.ok=setup.warn=lambda *a, **k: None; print(setup.rocm_root(['gfx1100'])[0])" 2>/dev/null | tail -n 1)
           echo "ROCm root: $HP"
           export HP CORE="$HP" LIBW="$HP"
           bash packaging/build_hip_linux.sh
