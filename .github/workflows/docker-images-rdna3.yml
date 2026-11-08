@@ -5,10 +5,12 @@ name: Strata rdna3 image
 # The first run with push off builds the image without publishing it (a dry run).
 
 on:
+  push:
+    branches: [amidg/docker-build]
   workflow_dispatch:
     inputs:
       git_ref:
-        description: 'Git ref of the fork to build (empty: the default branch)'
+        description: 'Git ref of the fork to build (empty: the branch that was pushed)'
         required: false
         default: ''
         type: string
@@ -76,7 +78,7 @@ jobs:
           SRC: ${{ github.workspace }}
           LLAMA: ${{ github.workspace }}/third_party/llama.cpp
           OUT: ${{ github.workspace }}/work
-          PKGVER: ${{ inputs.version }}
+          PKGVER: ${{ inputs.version || '0.2.3' }}
           COMMIT: ${{ github.sha }}
           JOBS: "4"
           DSV41: "0"
@@ -102,8 +104,8 @@ jobs:
           rm -rf /tmp/strata-ctx
           bash docker/build.sh --flavor hip \
             --engine "${{ steps.pkg.outputs.package }}" \
-            --version "${{ inputs.version }}" \
-            --tag "strata:${{ inputs.version }}-rdna3" \
+            --version "${{ inputs.version || '0.2.3' }}" \
+            --tag "strata:${{ inputs.version || '0.2.3' }}-rdna3" \
             --ctx /tmp/strata-ctx --ctx-only
 
       - name: Build the image
@@ -112,18 +114,18 @@ jobs:
             --build-arg "BASE_IMAGE=ubuntu:24.04" \
             --build-arg "FLAVOR=hip" \
             --build-arg "STRATA_COMMIT=${{ github.sha }}" \
-            --build-arg "STRATA_VERSION=${{ inputs.version }}" \
+            --build-arg "STRATA_VERSION=${{ inputs.version || '0.2.3' }}" \
             --build-arg "ENGINE_LABEL=rdna3-${{ github.sha }}" \
             -t "strata:${{ inputs.version }}-rdna3" /tmp/strata-ctx
 
       - name: Tag for the registry
         run: |
           DATE=$(date -u +%Y%m%d)
-          docker tag "strata:${{ inputs.version }}-rdna3" "${{ env.IMAGE }}:${{ inputs.version }}-rdna3-${DATE}"
+          docker tag "strata:${{ inputs.version || '0.2.3' }}-rdna3" "${{ env.IMAGE }}:${{ inputs.version || '0.2.3' }}-rdna3-${DATE}"
           docker tag "strata:${{ inputs.version }}-rdna3" "${{ env.IMAGE }}:latest-rdna3"
 
       - name: Log in and push
-        if: ${{ inputs.push }}
+        if: ${{ inputs.push != false }}
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_USER: ${{ github.actor }}
@@ -131,6 +133,6 @@ jobs:
           echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
           DATE=$(date -u +%Y%m%d)
           docker push "${{ env.IMAGE }}:${{ inputs.version }}-rdna3-${DATE}"
-          if [ "${{ inputs.latest }}" = "true" ]; then
+          if [ "${{ inputs.latest != false }}" = "true" ]; then
             docker push "${{ env.IMAGE }}:latest-rdna3"
           fi
