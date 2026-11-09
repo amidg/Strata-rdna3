@@ -65,10 +65,10 @@ cd "$repo"
 paths="packaging bin strata.py strata_control strata_cli serve requirements.txt requirements-monitor.txt docs/MANAGEMENT_PROTOCOL.md docs/TERMINAL_LAUNCH.md data bench/prompts/standard-v1 setup.py ref/load.py CMakeLists.txt"
 if git rev-parse --git-dir >/dev/null 2>&1; then
   # shellcheck disable=SC2086
-  { git ls-files -z -- $paths ':(glob)tools/*.py'; } | tar --null -T - -cf - | tar -xf - -C "$ctx/terminal-src"
+  { git ls-files -z -- $paths ':(glob)tools/*.py' tools/dsv41; } | tar --null -T - -cf - | tar -xf - -C "$ctx/terminal-src"
 else
   # shellcheck disable=SC2086
-  tar -cf - --exclude='__pycache__' $paths tools/*.py | tar -xf - -C "$ctx/terminal-src"
+  tar -cf - --exclude='__pycache__' $paths tools/*.py tools/dsv41 | tar -xf - -C "$ctx/terminal-src"
 fi
 
 # 2. the engine package(s): hard-linked when on the same file system (no second copy of GBs), copied otherwise

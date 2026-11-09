@@ -67,12 +67,28 @@ jobs:
           .venv/bin/pip install --upgrade pip
           .venv/bin/pip install -r requirements.txt
 
+      - name: Restore third_party cache
+        uses: actions/cache@v4
+        with:
+          path: third_party
+          key: rdna3-thirdparty-${{ hashFiles('setup.py') }}
+          restore-keys: rdna3-thirdparty-
+
+      - name: Restore the engine build cache
+        id: engine-cache
+        uses: actions/cache@v4
+        with:
+          path: work
+          key: rdna3-work-${{ hashFiles('CMakeLists.txt', 'cmake/**', 'src/**', 'include/**', 'tools/vision/**', 'setup.py') }}
+          restore-keys: rdna3-work-
+
       - name: Fetch llama.cpp, rocWMMA and the TheRock wheels
         run: |
           .venv/bin/python -c "import setup; setup.get_llama_cpp(); setup.get_rocwmma(); setup.rocm_root(['gfx1100'])"
           df -h /
 
       - name: Build the HIP engine package (gfx1100, rx7900 variant)
+        if: steps.engine-cache.outputs.cache-hit != 'true'
         env:
           VARIANT: rx7900
           SRC: ${{ github.workspace }}
@@ -88,7 +104,7 @@ jobs:
           export HP CORE="$HP" LIBW="$HP"
           bash packaging/build_hip_linux.sh
           echo "--- build status ---"
-          cat work/build.status
+          cat work/build.status 2>/dev/null || true
           df -h /
 
       - name: Locate the engine package
