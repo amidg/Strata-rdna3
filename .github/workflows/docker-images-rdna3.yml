@@ -116,13 +116,13 @@ jobs:
             --build-arg "STRATA_COMMIT=${{ github.sha }}" \
             --build-arg "STRATA_VERSION=${{ inputs.version || '0.2.3' }}" \
             --build-arg "ENGINE_LABEL=rdna3-${{ github.sha }}" \
-            -t "strata:${{ inputs.version }}-rdna3" /tmp/strata-ctx
+            -t "strata:${{ inputs.version || '0.2.3' }}-rdna3" /tmp/strata-ctx
 
       - name: Tag for the registry
         run: |
           DATE=$(date -u +%Y%m%d)
           docker tag "strata:${{ inputs.version || '0.2.3' }}-rdna3" "${{ env.IMAGE }}:${{ inputs.version || '0.2.3' }}-rdna3-${DATE}"
-          docker tag "strata:${{ inputs.version }}-rdna3" "${{ env.IMAGE }}:latest-rdna3"
+          docker tag "strata:${{ inputs.version || '0.2.3' }}-rdna3" "${{ env.IMAGE }}:latest-rdna3"
 
       - name: Log in and push
         if: ${{ inputs.push != false }}
@@ -132,7 +132,7 @@ jobs:
         run: |
           echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
           DATE=$(date -u +%Y%m%d)
-          docker push "${{ env.IMAGE }}:${{ inputs.version }}-rdna3-${DATE}"
+          docker push "${{ env.IMAGE }}:${{ inputs.version || '0.2.3' }}-rdna3-${DATE}"
           if [ "${{ inputs.latest != false }}" = "true" ]; then
             docker push "${{ env.IMAGE }}:latest-rdna3"
           fi
