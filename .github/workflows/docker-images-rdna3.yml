@@ -141,7 +141,7 @@ jobs:
           docker tag "strata:${{ inputs.version || '0.2.3' }}-rdna3" "${{ env.IMAGE }}:latest-rdna3"
 
       - name: Log in and push
-        if: ${{ inputs.push != false }}
+        if: ${{ github.event_name == 'push' || inputs.push }}
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REGISTRY_USER: ${{ github.actor }}
@@ -149,6 +149,6 @@ jobs:
           echo "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
           DATE=$(date -u +%Y%m%d)
           docker push "${{ env.IMAGE }}:${{ inputs.version || '0.2.3' }}-rdna3-${DATE}"
-          if [ "${{ inputs.latest != false }}" = "true" ]; then
+          if [ "${{ github.event_name == 'push' || inputs.latest != false }}" = "true" ]; then
             docker push "${{ env.IMAGE }}:latest-rdna3"
           fi
